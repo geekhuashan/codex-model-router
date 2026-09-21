@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-model-router"
+version = "0.1.0"
+description = "A loopback Responses API router and shared model catalog for Codex App and CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "aiohttp>=3.13.4,<4",
+  "tomlkit>=0.15,<1",
+  "backports.zstd>=1.0; python_version < '3.14'",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24", "zstandard>=0.23"]
+
+[project.scripts]
+codex-model-router = "codex_model_router.router:main"
+codex-model-config = "codex_model_router.configure:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_model_router*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:It is recommended to use web.AppKey:Warning"]
