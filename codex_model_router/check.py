@@ -98,7 +98,7 @@ def user(text):
     return {'role': 'user', 'content': text}
 
 
-async def run_checks(route, request, *, marker_factory=lambda: secrets.token_hex(12)):
+async def run_checks(route, request, *, marker_factory=lambda: secrets.token_hex(12), only=None):
     """Run bounded independent checks. request(endpoint, payload) can be mocked."""
     model = route['model']
     def payload(items, **extra):
@@ -125,7 +125,7 @@ async def run_checks(route, request, *, marker_factory=lambda: secrets.token_hex
         tool = {'type': 'function', 'name': 'read_challenge', 'description': 'Read a test challenge.',
                 'parameters': {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}, 'strict': True}
         initial = [user('Call read_challenge exactly once. Then return only the challenge value from the tool result.')]
-        first = await request('/responses', payload(initial, tools=[tool], tool_choice={'type': 'function', 'name': 'read_challenge'}))
+        first = await request('/responses', payload(initial, tools=[tool], tool_choice='auto'))
         calls = [item for item in output(first) if item.get('type') == 'function_call']
         require(len(calls) == 1 and calls[0].get('name') == 'read_challenge' and bool(calls[0].get('call_id')), 'missing_expected_tool_call')
         try:
@@ -159,6 +159,8 @@ async def run_checks(route, request, *, marker_factory=lambda: secrets.token_hex
 
     results = {}
     for name, probe in [('streaming', streaming), ('visible_history', history), ('tool_roundtrip', tools), ('compaction', compact)]:
+        if only and name not in only:
+            continue
         try:
             results[name] = {'status': 'pass', **(await probe() or {})}
         except ProbeError as exc:
@@ -168,13 +170,13 @@ async def run_checks(route, request, *, marker_factory=lambda: secrets.token_hex
     return results
 
 
-async def check(config, alias, timeout=60):
+async def check(config, alias, timeout=60, only=None):
     route = config.get('routes', {}).get(alias)
     if not route:
         raise ValueError('Only an explicitly configured custom model can be checked')
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout),
                                     trust_env=False, cookie_jar=aiohttp.DummyCookieJar()) as session:
-        results = await run_checks(route, Transport(session, route))
+        results = await run_checks(route, Transport(session, route), only=only)
     return {'time': datetime.now(timezone.utc).isoformat(), 'model': alias,
             'source': route['source'], 'checks': results,
             'passed': all(item['status'] == 'pass' for item in results.values())}
@@ -184,6 +186,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Explicit Responses capability probes (makes billable API requests).')
     parser.add_argument('--config', required=True)
     parser.add_argument('--model', required=True)
+    parser.add_argument('--only', action='append', choices=['streaming', 'visible_history', 'tool_roundtrip', 'compaction'], help='Run only selected checks; repeat to select multiple')
     parser.add_argument('--timeout', type=float, default=60, help='Per-request timeout in seconds (1-120)')
     parser.add_argument('--json-report', help='Write metadata-only JSON report to this new file')
     args = parser.parse_args(argv)
@@ -192,7 +195,7 @@ def main(argv=None):
     os.umask(0o077)
     try:
         config = json.loads(Path(args.config).expanduser().read_text())
-        report = asyncio.run(check(config, args.model, args.timeout))
+        report = asyncio.run(check(config, args.model, args.timeout, args.only))
         rendered = json.dumps(report, indent=2, ensure_ascii=False)
         if args.json_report:
             with Path(args.json_report).expanduser().open('x') as handle:

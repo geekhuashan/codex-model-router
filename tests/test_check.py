@@ -28,7 +28,7 @@ class MockRequests:
             events = [{'type': 'response.output_text.delta', 'delta': 'Hello'},
                       {'type': 'response.completed', 'response': response('Hello')}]
             return events[:1] if self.break_case == 'stream_incomplete' else events
-        if data.get('tool_choice') == {'type': 'function', 'name': 'read_challenge'}:
+        if data.get('tool_choice') == 'auto':
             return {'status': 'completed', 'output': [{'type': 'function_call', 'name': 'read_challenge',
                     'call_id': 'mock-call', 'arguments': '{}'}]}
         if any(i.get('type') == 'function_call_output' for i in data['input']):
@@ -177,3 +177,16 @@ async def test_transport_429_does_not_log_body(monkeypatch):
     with pytest.raises(ProbeError) as caught:
         await Transport(session, route)('/responses', {})
     assert caught.value.result == {'status': 'error', 'reason': 'rate_limited', 'http_status': 429}
+
+@pytest.mark.asyncio
+async def test_selected_probe_does_not_run_other_requests():
+    calls = []
+    async def request(endpoint, payload):
+        calls.append(endpoint)
+        return [{'type': 'response.output_text.delta', 'delta': 'hello'},
+                {'type': 'response.completed', 'response': {'status': 'completed', 'output': [
+                    {'type': 'message', 'content': [{'type': 'output_text', 'text': 'hello'}]}]}}]
+    result = await run_checks({'model': 'example'}, request, only=['streaming'])
+    assert list(result) == ['streaming']
+    assert result['streaming']['status'] == 'pass'
+    assert calls == ['/responses']

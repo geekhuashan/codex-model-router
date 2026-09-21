@@ -100,6 +100,8 @@ codex-model-check --config "$HOME/.config/codex-model-router/router.json" \
   --model example/my-model --json-report "$HOME/model-check.json"
 ```
 
+To rerun only one capability, append `--only tool_roundtrip` (or `streaming`, `visible_history`, `compaction`); the report covers only the selected checks.
+
 Or append `--check` to `codex-model-config add` to check immediately after adding. Failed checks keep the model entry for correction; the command returns nonzero. Reports distinguish `pass`, `fail`, `unsupported`, and `error`; a 429 is a rate limit, not proof of protocol incompatibility. Each request has a timeout and ordinary responses cap output at 512 tokens.
 
 Checks cover streamed text plus completion, visible history over two turns, a function call followed by a random tool-result challenge, and opaque compaction followed by recall. No model-generated code is executed. Compaction recall deliberately excludes plaintext replay: failure means this strict opaque-only test did not pass, not necessarily that all client compaction workflows are unusable. These are bounded capability probes, not certification of every Codex tool, long context or cross-provider continuation.
