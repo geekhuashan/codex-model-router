@@ -73,7 +73,7 @@ class Provenance:
                 self.observe(child, source)
 
 
-def normalize_history(data, source, provenance, native=False):
+def normalize_history(data, source, provenance, native=False, accepts_reasoning_content=False):
     """Keep visible history and tool results; discard only foreign hidden reasoning.
 
     Compaction can contain the only copy of earlier context, so never discard it.
@@ -93,6 +93,13 @@ def normalize_history(data, source, provenance, native=False):
                 changed = True
                 continue
             # Preserve opaque context; upstream decides whether it can interpret it.
+        # Some Responses providers emit reasoning_text in content, while others
+        # require reasoning.content to be empty. Never rewrite visible messages.
+        if item.get('type') == 'reasoning' and item.get('content') and not accepts_reasoning_content:
+            changed = True
+            if not encrypted:
+                continue
+            item = {key: value for key, value in item.items() if key != 'content'}
         kept.append(item)
     if changed:
         data['input'] = kept
@@ -114,7 +121,8 @@ def prepare(body, route, headers, provenance=None):
     outgoing['Accept-Encoding'] = 'identity'
     data = json.loads(body)
     data['model'] = route['model']
-    normalize_history(data, route['source'], provenance)
+    normalize_history(data, route['source'], provenance,
+                      accepts_reasoning_content=route.get('accepts_reasoning_content', False))
     data.pop('service_tier', None)
     return json.dumps(data, ensure_ascii=False).encode(), outgoing
 

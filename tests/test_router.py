@@ -244,3 +244,32 @@ async def test_monitor_and_dashboard_report_routing_without_credentials(harness)
     assert 'mock-third-party-key' not in json.dumps(state)
     assert 'mock-pro-token' not in json.dumps(state)
     assert (await client.get('/local-mock-token/dashboard')).status == 200
+
+@pytest.mark.asyncio
+async def test_plaintext_reasoning_from_another_provider_is_not_replayed(harness):
+    client, seen, _ = harness
+    visible = [{'role': 'user', 'content': 'Remember the report'},
+               {'type': 'function_call_output', 'call_id': 'example', 'output': 'report saved'}]
+    response = await client.post(PATH, json={'model': 'custom/alpha', 'input': [
+        {'type': 'reasoning', 'summary': [], 'content': [{'type': 'reasoning_text', 'text': 'PRIVATE'}]},
+        *visible]}, headers=HEADERS)
+    assert response.status == 200
+    await response.read()
+    assert seen[-1][2]['input'] == visible
+
+
+def test_reasoning_content_capability_and_opaque_context_preservation():
+    from copy import deepcopy
+    from codex_model_router.router import normalize_history, Provenance
+    provenance = Provenance()
+    item = {'type': 'reasoning', 'encrypted_content': 'opaque',
+            'content': [{'type': 'reasoning_text', 'text': 'PRIVATE'}]}
+    provenance.observe(item, 'Example')
+    data = {'input': [deepcopy(item), {'type': 'compaction', 'encrypted_content': 'context'}]}
+    normalize_history(data, 'Example', provenance)
+    assert data['input'][0] == {'type': 'reasoning', 'encrypted_content': 'opaque'}
+    assert data['input'][1] == {'type': 'compaction', 'encrypted_content': 'context'}
+    data = {'input': [deepcopy(item)]}
+    assert not normalize_history(data, 'Example', provenance, accepts_reasoning_content=True)
+    assert data['input'][0] == item
+    provenance.db.close()
