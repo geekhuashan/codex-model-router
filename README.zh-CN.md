@@ -12,6 +12,17 @@
 
 App 和 CLI 指向同一个 `CODEX_HOME` 时共用菜单和配置。模型来源由别名明确区分，例如 `example/my-model`。共用目录不代表账号额度合并。
 
+## 兼容性检查与来源面板
+
+```sh
+codex-model-check --config "$HOME/.config/codex-model-router/router.json" --model example/my-model
+codex-model-status --config "$HOME/.config/codex-model-router/router.json" --dashboard
+```
+
+添加模型时加 `--check` 可立即检查。检查最多发出 7 次真实上游请求，会消耗对应额度；测试套件本身只用本机 mock。分别检查流式完成、两轮历史、工具结果回传和压缩后续聊，不执行模型生成的代码。结果区分通过、行为失败、接口不支持和网络/额度错误；429 不会被误判为不兼容。压缩测试只回传加密压缩项，失败不能直接推断所有客户端压缩方式都不可用。
+
+来源面板每 3 秒刷新，显示来源、模型、上游主机、HTTP、生成结果和上游报告的输入/输出/缓存 Token。HTTP 200 但没有完成事件会显示“未确认完成”。记录不含聊天正文或密钥；无法知道上游账号池内部选了哪个账号，也不是实际余额或金额账单。当前进程保留最近 100 次请求，重启前历史保存在本机轮转日志中。
+
 ## 已有类似项目
 
 | 项目 | 主要方式 | 与本项目的区别 |

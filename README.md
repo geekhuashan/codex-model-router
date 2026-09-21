@@ -91,6 +91,30 @@ Restore before stopping the router, then restart Codex. No login file, task data
 
 Routing and catalog files are loaded when their respective processes start. Restart the router and Codex after configuration changes. Native models are an initialization-time cache snapshot; new native model releases are not automatically imported.
 
+## Compatibility checks
+
+Run a model check explicitly (up to seven short **billable upstream requests**):
+
+```sh
+codex-model-check --config "$HOME/.config/codex-model-router/router.json" \
+  --model example/my-model --json-report "$HOME/model-check.json"
+```
+
+Or append `--check` to `codex-model-config add` to check immediately after adding. Failed checks keep the model entry for correction; the command returns nonzero. Reports distinguish `pass`, `fail`, `unsupported`, and `error`; a 429 is a rate limit, not proof of protocol incompatibility. Each request has a timeout and ordinary responses cap output at 512 tokens.
+
+Checks cover streamed text plus completion, visible history over two turns, a function call followed by a random tool-result challenge, and opaque compaction followed by recall. No model-generated code is executed. Compaction recall deliberately excludes plaintext replay: failure means this strict opaque-only test did not pass, not necessarily that all client compaction workflows are unusable. These are bounded capability probes, not certification of every Codex tool, long context or cross-provider continuation.
+
+## See where requests went
+
+```sh
+codex-model-status --config "$HOME/.config/codex-model-router/router.json"
+codex-model-status --config "$HOME/.config/codex-model-router/router.json" --dashboard
+```
+
+The local, read-only dashboard refreshes every three seconds. It shows current and recent requests: UTC time, source, selected alias, upstream hostname, operation, HTTP status, generation outcome and upstream-reported input/output/cached tokens. HTTP 200 without a completion event is shown as **unconfirmed**. Failed/incomplete streams and interrupted connections are distinct.
+
+The health endpoint exposes the same metadata with `--json`. Recent records and totals are limited to this process lifetime; rotated `activity.log` files retain start/finish records joined by request ID. No prompts, response text, headers, keys or complete upstream URLs are recorded. Treat the local dashboard URL as private. An upstream gateway's internal account selection and remaining account balance cannot be inferred from this router.
+
 ## Boundaries
 
 - Binds only to `127.0.0.1`. The local URL includes a random token. Browser-origin requests are rejected; do not expose this listener to the network.
@@ -100,7 +124,7 @@ Routing and catalog files are loaded when their respective processes start. Rest
 - Different providers cannot generally decode each other's encrypted reasoning. Known foreign reasoning items are omitted while visible messages and tool results remain. Compaction payloads and `previous_response_id` are preserved for upstream validation; cross-provider continuation is **not guaranteed**, especially after compaction. This is not a lossless transfer of hidden reasoning.
 - Internal account-specific models, including automatic review, still use the native route. Selecting a custom conversational model does not guarantee zero native-account usage.
 - No conversion of provider-specific tools or parameters. Context compaction, multimodal input and advanced agent tools depend on both the client and upstream.
-- `activity.log` records upstream HTTP status, not a guarantee that an SSE response completed successfully.
+- `activity.log` records both upstream HTTP status and observed completion state; reported tokens are not an account balance or monetary bill.
 - This uses evolving client configuration, not an official extension API. It is not affiliated with or endorsed by OpenAI or Ollama.
 
 ## Tests

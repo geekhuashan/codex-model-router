@@ -9,6 +9,10 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import time
 import sqlite3
+from urllib.parse import urlsplit
+
+from codex_model_router.telemetry import Observation, Monitor
+from codex_model_router.dashboard import HTML
 
 import aiohttp
 from aiohttp import web
@@ -120,6 +124,7 @@ def create_app(config, *, session=None):
     app['config'] = config
     app['routes'] = config['routes']
     app['session'] = session
+    app['monitor'] = Monitor()
     app['stats'] = {'requests': 0, 'by_source': {}, 'last': None}
     app['log'] = logging.getLogger('model-router')
     app['provenance'] = Provenance(config.get('state_db', ':memory:'))
@@ -135,7 +140,16 @@ def create_app(config, *, session=None):
         app['provenance'].db.close()
 
     async def health(request):
-        return web.json_response({'status': 'ok', 'models': list(app['routes']), **app['stats']})
+        if request.headers.get('Origin'):
+            raise web.HTTPForbidden()
+        return web.json_response({'status': 'ok', 'models': list(app['routes']), **app['stats'],
+                                  'monitor': app['monitor'].snapshot()}, headers={'Cache-Control': 'no-store'})
+
+    async def dashboard(request):
+        return web.Response(text=HTML, content_type='text/html', headers={
+            'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
+            'X-Frame-Options': 'DENY',
+            'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"})
 
     async def handle(request):
         if request.headers.get('Origin'):
@@ -178,9 +192,13 @@ def create_app(config, *, session=None):
         stats = app['stats']
         stats['requests'] += 1
         stats['by_source'][source] = stats['by_source'].get(source, 0) + 1
-        started = time.monotonic()
+        observation = Observation(source, model, urlsplit(base).hostname, suffix)
+        app['monitor'].begin(observation)
+        app['log'].info(json.dumps(observation.event))
         response = None
-        status = 502
+        status = None
+        is_sse = False
+        failure = None
         try:
             async with app['session'].post(url, data=body, headers=headers, allow_redirects=False) as upstream:
                 status = upstream.status
@@ -193,6 +211,7 @@ def create_app(config, *, session=None):
                 buffer = b''
                 is_sse = 'text/event-stream' in upstream.headers.get('Content-Type', '')
                 async for chunk in upstream.content.iter_any():
+                    observation.feed(chunk, is_sse)
                     buffer += chunk
                     if is_sse:
                         while b'\n' in buffer:
@@ -212,19 +231,24 @@ def create_app(config, *, session=None):
                         pass
                 await response.write_eof()
                 return response
+        except asyncio.CancelledError:
+            failure = 'cancelled'
+            raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError):
+            failure = 'connection_error'
             if response is not None and response.prepared:
                 response.force_close()
                 return response
             return web.json_response({'error': {'message': 'Upstream connection failed'}}, status=502)
         finally:
-            event = {'source': source, 'model': model, 'status': status,
-                     'seconds': round(time.monotonic() - started, 2)}
+            event = observation.finish(status, is_sse, failure)
+            app['monitor'].finish(event)
             stats['last'] = event
             app['log'].info(json.dumps(event))
 
     prefix = '/' + config['local_token']
     app.router.add_get(prefix + '/health', health)
+    app.router.add_get(prefix + '/dashboard', dashboard)
     app.router.add_route('*', prefix + '/{tail:.*}', handle)
     app.on_startup.append(startup)
     app.on_cleanup.append(cleanup)

@@ -228,3 +228,19 @@ async def test_response_id_forwarded_after_reasoning_filter(harness, target):
     await response.read()
     assert seen[-1][2]['previous_response_id'] == 'resp-example'
     assert seen[-1][2]['input'] == [visible]
+
+@pytest.mark.asyncio
+async def test_monitor_and_dashboard_report_routing_without_credentials(harness):
+    client, seen, release = harness
+    response = await client.post(PATH, json={'model': 'custom/alpha', 'stream': True}, headers=HEADERS)
+    await response.content.readuntil(b'\n\n')
+    state = await (await client.get('/local-mock-token/health')).json()
+    assert state['monitor']['active'][0]['source'] == 'CLIProxy'
+    release.set()
+    await response.read()
+    state = await (await client.get('/local-mock-token/health')).json()
+    assert state['monitor']['recent'][0]['outcome'] == 'completed'
+    assert not state['monitor']['active']
+    assert 'mock-third-party-key' not in json.dumps(state)
+    assert 'mock-pro-token' not in json.dumps(state)
+    assert (await client.get('/local-mock-token/dashboard')).status == 200

@@ -185,6 +185,7 @@ def main(argv=None) -> int:
         if command == 'init':
             sub.add_argument('--port', type=int, default=18791)
         if command == 'add':
+            sub.add_argument('--check', action='store_true', help='After adding, run billable compatibility probes')
             for option in ('name', 'base-url', 'model', 'label', 'api-key-env', 'template'):
                 sub.add_argument('--' + option, required=True)
     args = parser.parse_args(argv)
@@ -207,6 +208,10 @@ def main(argv=None) -> int:
     finally:
         lock.unlink(missing_ok=True)
     print(args.command + ': complete')
+    if args.command == 'add' and args.check:
+        from .check import main as check_main
+        return check_main(['--config', str(args.state_dir / 'router.json'),
+                           '--model', args.name + '/' + args.model])
     return 0
 
 
