@@ -83,6 +83,23 @@ codex-model-config restore \
 
 Restore before stopping the router, then restart Codex. No login file, task database or session is replaced. Enable/restore only manage the routing/catalog/provider root settings, and refuse to overwrite conflicting later edits. The example does not install a background service; keep the router running while Codex uses it.
 
+## Existing tasks pinned to another provider
+
+**A model display name is not proof of its provider.** Old tasks and child tasks can retain their original `model_provider`; choosing a native model name may still call the old upstream and bypass this router entirely. The dashboard cannot see bypass traffic.
+
+Explicitly bridge an old custom provider through the same local router:
+
+```sh
+codex-model-legacy enable --codex-home "$HOME/.codex" \
+  --state-dir "$HOME/.config/codex-model-router" --provider YOUR_OLD_PROVIDER_ID
+```
+
+The provider ID remains usable by existing tasks, but its endpoint becomes this router and its authentication uses the native login. The chosen model alias then selects the actual upstream and credentials. This changes the meaning of unprefixed native model IDs under that old provider: they now use ChatGPT/OpenAI, while `provider/model` aliases use configured custom routes. Only the explicitly named provider is changed. Native sign-in is required for this bridge.
+
+Stop active tasks and restart **all App and CLI processes** after installing: editing config cannot update provider objects already loaded in memory, including existing child agents. Do not assume an ongoing turn switches providers midway. Confirm the first new request in the dashboard. Other custom providers, explicit endpoint overrides, and other API clients remain outside this router.
+
+Backups/receipts stay private on the user's machine. Credential references that still read the provider being replaced must be migrated first; the command refuses to break them. To undo, run the same command with `restore` instead of `enable`, then restart. Restore legacy bridges **before** restoring the main router configuration or stopping the service. No task history or database is rewritten.
+
 ## Adding more models
 
 - Same Responses upstream, new model: add another alias and its correct capability metadata.

@@ -53,3 +53,15 @@ codex-model-status --config "$HOME/.config/codex-model-router/router.json" --das
 - 等当前工具操作完成再切换，避免未完成的工具调用干扰后续模型。
 - 历史已压缩，或出现加密状态/压缩格式不兼容时，先让原模型把目标、结论、文件路径和待办写成可见交接文档，再用新任务接续。不要删除压缩记录来强行通过。
 - 切换报错后先修复或回到原模型；请求失败不代表原有历史或文件被删除。
+
+## 旧任务保留 provider 时怎么办
+
+模型菜单显示名称不代表实际来源。旧任务及子任务可能保留旧 provider，选择原生模型名后仍直接请求旧服务，绕过路由面板。显式启用旧 provider 桥接：
+
+```sh
+codex-model-legacy enable --codex-home "$HOME/.codex" --state-dir "$HOME/.config/codex-model-router" --provider 原provider的ID
+```
+
+它把指定旧 provider 改为本机路由入口，使用原生登录鉴权；实际选择的模型别名决定最终上游及密钥。旧任务中的无前缀原生模型名此后走 ChatGPT/OpenAI，带来源前缀的别名走对应第三方。只修改指定 provider，不改任务数据库或历史。需先迁移依赖该 provider 表读取的密钥。
+
+**停止进行中的任务并重启所有 App/CLI 进程后才生效。** 已运行的子任务也缓存旧配置；一次正在生成的回复不会中途切换。重启后核对来源面板第一条请求。其他未桥接 provider、显式覆盖地址及其他客户端不在本工具覆盖范围。卸载先把桥接命令的 `enable` 改为 `restore`，再恢复主路由配置。

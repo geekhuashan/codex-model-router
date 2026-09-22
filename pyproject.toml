@@ -22,6 +22,7 @@ test = ["pytest>=8", "pytest-asyncio>=0.24", "zstandard>=0.23"]
 codex-model-router = "codex_model_router.router:main"
 codex-model-status = "codex_model_router.status:main"
 codex-model-check = "codex_model_router.check:main"
+codex-model-legacy = "codex_model_router.legacy:main"
 codex-model-config = "codex_model_router.configure:main"
 
 [tool.setuptools.packages.find]
