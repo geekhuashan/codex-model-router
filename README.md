@@ -106,7 +106,39 @@ Backups/receipts stay private on the user's machine. Credential references that 
 - New Responses upstream: add a route and a credential reference, then validate streaming, tools, follow-up turns and context compaction.
 - Chat Completions or Anthropic-only upstream: not supported by this project.
 
-Routing and catalog files are loaded when their respective processes start. Restart the router and Codex after configuration changes. Native models are an initialization-time cache snapshot; new native model releases are not automatically imported.
+Routes reload between requests; active streams keep their original route. Changes to the listening port, local token or state database still require a router restart. Codex currently caches the model catalog in its backend: **restart App/CLI after catalog changes**. The refresh service never restarts Codex or changes a task's selected model.
+
+### Optional catalog refresh
+
+Configure explicit discovery sources in your private `router.json` (disabled unless `refresh.enabled` is true):
+
+```json
+"refresh": {
+  "enabled": true,
+  "interval_seconds": 21600,
+  "exclude": [],
+  "native": {
+    "url": "https://chatgpt.com/backend-api/codex/models",
+    "auth_file": "/absolute/path/to/.codex/auth.json",
+    "client_version": "YOUR_INSTALLED_CODEX_VERSION",
+    "label_prefix": "Pro · "
+  },
+  "providers": [
+    {"route_template": "example/existing-gpt-model", "prefix": "example"}
+  ]
+}
+```
+
+Start/restart the router once to install this feature. It checks on startup and every six hours by default. Only selected providers are queried, using the credential reference of an existing route. Refresh uses catalog GET requests, never inference probes. For a manual check or the last local report:
+
+```sh
+codex-model-refresh --config "$HOME/.config/codex-model-router/router.json"
+codex-model-refresh --config "$HOME/.config/codex-model-router/router.json" --status
+```
+
+Native discovery uses the signed-in account's official catalog, not the shared models cache. Third-party IDs are added only when they match metadata freshly returned by the native catalog; matching IDs are not proof of upstream inference compatibility. Other IDs are reported as pending for manual capability configuration. This does not add protocol adapters. Existing model entries, custom overrides, routes and credentials are preserved; refresh is additive, so provider disappearance never removes a model. Put IDs/aliases in `exclude` to prevent re-discovery of manually removed models. Failed sources retain their previous catalog; status appears in the local dashboard and `refresh-status.json`. No account ownership or pool internals are inspected.
+
+The official account catalog endpoint is an implementation detail and can change. Authentication or format failures are reported without clearing existing models. The restart indicator records that a catalog update occurred; it does not inspect whether every App/CLI process has since restarted.
 
 ## Compatibility checks
 

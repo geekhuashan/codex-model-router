@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from codex_model_router.telemetry import Observation, Monitor
 from codex_model_router.dashboard import HTML
+from codex_model_router.reload import RouteSnapshot, start_refresh, stop_refresh, refresh_status
 
 import aiohttp
 from aiohttp import web
@@ -127,7 +128,8 @@ def prepare(body, route, headers, provenance=None):
     return json.dumps(data, ensure_ascii=False).encode(), outgoing
 
 
-def create_app(config, *, session=None):
+def create_app(config, *, session=None, config_path=None):
+    snapshots = RouteSnapshot(config, config_path)
     app = web.Application(client_max_size=MAX_BODY)
     app['config'] = config
     app['routes'] = config['routes']
@@ -138,20 +140,22 @@ def create_app(config, *, session=None):
     app['provenance'] = Provenance(config.get('state_db', ':memory:'))
 
     async def startup(app):
+        app['refresh_task'] = await start_refresh(config_path, read_secret)
         if app['session'] is None:
             app['session'] = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=None, connect=30, sock_read=600),
                 auto_decompress=True, trust_env=False, cookie_jar=aiohttp.DummyCookieJar())
 
     async def cleanup(app):
+        await stop_refresh(app.get('refresh_task'))
         await app['session'].close()
         app['provenance'].db.close()
 
     async def health(request):
         if request.headers.get('Origin'):
             raise web.HTTPForbidden()
-        return web.json_response({'status': 'ok', 'models': list(app['routes']), **app['stats'],
-                                  'monitor': app['monitor'].snapshot()}, headers={'Cache-Control': 'no-store'})
+        return web.json_response({'status': 'ok', 'models': list(snapshots.get()['routes']), **app['stats'],
+                                  'monitor': app['monitor'].snapshot(), 'refresh': refresh_status(config_path)}, headers={'Cache-Control': 'no-store'})
 
     async def dashboard(request):
         return web.Response(text=HTML, content_type='text/html', headers={
@@ -181,8 +185,9 @@ def create_app(config, *, session=None):
             model = data.get('model')
             if not isinstance(model, str) or not model:
                 raise ValueError('Model is required; no implicit billing fallback')
-            route = app['routes'].get(model)
-            if not route and model not in config['native_models']:
+            current = snapshots.get()
+            route = current['routes'].get(model)
+            if not route and model not in current['native_models']:
                 raise ValueError('Unknown model; no implicit billing fallback')
             body, headers = prepare(raw, route, request.headers, app['provenance'])
         except (ValueError, KeyError, OSError) as exc:
@@ -193,9 +198,9 @@ def create_app(config, *, session=None):
         if route:
             base, source = route['base_url'], route['source']
         elif request.headers.get('ChatGPT-Account-ID'):
-            base, source = config['chatgpt_url'], 'ChatGPT'
+            base, source = current['chatgpt_url'], 'ChatGPT'
         else:
-            base, source = config['openai_url'], 'OpenAI API'
+            base, source = current['openai_url'], 'OpenAI API'
         url = base.rstrip('/') + suffix
         stats = app['stats']
         stats['requests'] += 1
@@ -273,7 +278,7 @@ def main():
     handler = RotatingFileHandler(config_path.parent / 'activity.log', maxBytes=1024 * 1024, backupCount=2)
     logging.getLogger('model-router').addHandler(handler)
     logging.getLogger('model-router').setLevel(logging.INFO)
-    web.run_app(create_app(config), host='127.0.0.1', port=config['port'],
+    web.run_app(create_app(config, config_path=config_path), host='127.0.0.1', port=config['port'],
                 access_log=None, print=None, handler_cancellation=True)
 
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-model-router"
-version = "0.2.0"
+version = "0.3.0"
 description = "A loopback Responses API router and shared model catalog for Codex App and CLI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dependencies = [
 test = ["pytest>=8", "pytest-asyncio>=0.24", "zstandard>=0.23"]
 
 [project.scripts]
+codex-model-refresh = "codex_model_router.refresh:main"
 codex-model-router = "codex_model_router.router:main"
 codex-model-status = "codex_model_router.status:main"
 codex-model-check = "codex_model_router.check:main"

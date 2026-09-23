@@ -65,3 +65,24 @@ codex-model-legacy enable --codex-home "$HOME/.codex" --state-dir "$HOME/.config
 它把指定旧 provider 改为本机路由入口，使用原生登录鉴权；实际选择的模型别名决定最终上游及密钥。旧任务中的无前缀原生模型名此后走 ChatGPT/OpenAI，带来源前缀的别名走对应第三方。只修改指定 provider，不改任务数据库或历史。需先迁移依赖该 provider 表读取的密钥。
 
 **停止进行中的任务并重启所有 App/CLI 进程后才生效。** 已运行的子任务也缓存旧配置；一次正在生成的回复不会中途切换。重启后核对来源面板第一条请求。其他未桥接 provider、显式覆盖地址及其他客户端不在本工具覆盖范围。卸载先把桥接命令的 `enable` 改为 `restore`，再恢复主路由配置。
+
+
+## 自动刷新模型目录
+
+在私有 `router.json` 中显式配置 `refresh` 后，路由启动时检查一次，默认每六小时再次检查；配置示例见 [英文说明](README.md#optional-catalog-refresh)。安装本功能需要重启一次路由。未启用时不自动访问上游。
+
+- Pro 从当前登录账号的官方目录读取，避免共享缓存混入第三方模型。
+- 只检查配置选中的第三方来源，复用已有路由的凭据引用。新 ID 与本次官方元数据匹配后才添加；其余列为待配置，不猜测能力，也不自动进行计费推理测试。
+- 保留现有模型参数、手动修改和其他 provider；不会自动删模型。手动删除后不想再次发现的 ID/别名放入 `refresh.exclude`。
+- 某个来源获取失败时保留旧目录。只发目录 GET 请求，不查询账号池内部账号信息。
+- 路由在新请求之间热加载，正在运行的请求保持原路由。模型选择不会被刷新操作改变。
+- **当前 Codex 后端会缓存菜单，目录更新后仍需重启 App/CLI。** 本工具不会自动重启 App。重启提示表示目录曾更新，不代表已检测所有客户端是否重启。
+
+手动检查及查看上次结果：
+
+```sh
+codex-model-refresh --config "$HOME/.config/codex-model-router/router.json"
+codex-model-refresh --config "$HOME/.config/codex-model-router/router.json" --status
+```
+
+本地来源面板显示最近检查时间、结果、新增及待配置数量。官方目录接口若发生变化或登录失效，会保留已有目录并报告失败。
